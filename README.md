@@ -10,32 +10,31 @@ HLoD trains an explicit Gaussian parent–child forest. At each view, a screen-s
 
 ## Installation
 
-Linux, an NVIDIA GPU, a compatible driver, a C++ compiler and a CUDA toolkit containing `nvcc` are required for GPU training and rendering. The release checks use Python 3.10, PyTorch 2.5.1, CUDA 12.4 and an RTX 4090. CPU tests also exercise the PyTorch traversal fallback; the rasterizers and training require CUDA.
+The setup was tested on Linux using Python 3.10, PyTorch 2.5.1, CUDA 12.4 and GCC 11.
 
-Clone **this HLoD repository**, then run the following commands from its root.
+Install the compiler prerequisites on Ubuntu:
+
 ```bash
+sudo apt install git build-essential libglm-dev
+```
+
+Clone the repository and install HLoD:
+
+```bash
+git clone https://github.com/serio42/hlod-gs.git
+cd hlod-gs
+
 conda env create -f environment.yml
 conda activate hlod
-./scripts/install_extensions.sh
+MAX_JOBS=2 ./scripts/install_extensions.sh
 ```
 
-The compiler prerequisites on Ubuntu can be installed with `sudo apt install build-essential libglm-dev`. Use a host compiler supported by CUDA 12.4 (GCC 11 is used in the release checks). The environment pins the CUDA compiler and development headers to 12.4, matching PyTorch. Check `nvcc --version` against `python -c "import torch; print(torch.version.cuda)"` if using a pre-existing environment. To select an installed system toolkit instead:
+The Conda environment includes Python, PyTorch and the matching CUDA 12.4
+compiler and development headers. The installer builds the required native
+dependencies and applies the HLoD rasterizer patch automatically.
 
-```bash
-export CUDA_HOME=/usr/local/cuda-12.4
-export PATH="$CUDA_HOME/bin:$PATH"
-```
-
-HLoD respects an explicit, complete `CUDA_HOME` before automatic toolkit detection. The selected prefix must contain both `bin/nvcc` and `include/crt/host_defines.h`. If Conda also configures an incompatible host compiler, select a supported system compiler with `export CC=/usr/bin/gcc CXX=/usr/bin/g++` and `unset NVCC_PREPEND_FLAGS` before building extensions.
-
-Alternatively, install PyTorch 2.5.1 and torchvision 0.20.1 with the CUDA 12.4 wheels in a Python 3.10 virtual environment, then:
-
-```bash
-python -m pip install -r requirements.txt
-./scripts/install_extensions.sh
-```
-
-The extension installer pins the INRIA rasterizer and `simple-knn` to specific commits. It applies [our rasterizer patch](patches/diff-gaussian-rasterization-low-pass.patch), which exposes the low-pass covariance dilation in **both forward and backward** and optionally reports Gaussian–tile intersections. An unpatched upstream rasterizer is not compatible with the HLoD `low_pass` argument. The hierarchy extension is compiled on first use. Set `MAX_JOBS=2` to limit build memory, if needed.
+`MAX_JOBS=2` limits memory usage during installation. The hierarchy extension
+and gsplat kernels are compiled on first use, which may take a few minutes.
 
 `gsplat==1.5.3` is included as an alternative backend. Use `--renderer gsplat` for training or rendering; this changes the rasterization/densification configuration and should be reported when comparing results. For gsplat, absolute-gradient densification is enabled by default, with an automatically adjusted default gradient threshold. `--no-absgrad` disables it.
 
