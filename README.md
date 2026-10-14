@@ -48,7 +48,7 @@ Training keeps images on CPU by default; `--data_device cuda` explicitly moves t
 python train.py -s /path/to/scene -m output/scene
 ```
 
-Only supply options that differ from the defaults. By default, training uses all views; add `--eval` to enable the train/test split. For COLMAP, evaluation holds out every eighth view unless the dataset provides explicit split files. Use `--llffhold` to change it. For NeRF synthetic evaluation, the provided train/test transforms are used.
+Only supply options that differ from the defaults. By default, training uses all views; add `--eval` to enable the train/test split. For COLMAP, evaluation holds out every eighth view unless the dataset provides explicit split files.
 
 The shell wrapper continues to enable evaluation splitting. For example, a paper dataset run with a scene-specific resolution is:
 
