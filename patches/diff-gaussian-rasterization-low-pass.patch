@@ -1,0 +1,321 @@
+diff --git a/cuda_rasterizer/backward.cu b/cuda_rasterizer/backward.cu
+index 4aa41e1..36e0bdf 100644
+--- a/cuda_rasterizer/backward.cu
++++ b/cuda_rasterizer/backward.cu
+@@ -150,7 +150,7 @@ __global__ void computeCov2DCUDA(int P,
+ 	const float* view_matrix,
+ 	const float* dL_dconics,
+ 	float3* dL_dmeans,
+-	float* dL_dcov)
++	float* dL_dcov, float low_pass)
+ {
+ 	auto idx = cg::this_grid().thread_rank();
+ 	if (idx >= P || !(radii[idx] > 0))
+@@ -194,9 +194,9 @@ __global__ void computeCov2DCUDA(int P,
+ 	glm::mat3 cov2D = glm::transpose(T) * glm::transpose(Vrk) * T;
+ 
+ 	// Use helper variables for 2D covariance entries. More compact.
+-	float a = cov2D[0][0] += 0.3f;
++	float a = cov2D[0][0] += low_pass;
+ 	float b = cov2D[0][1];
+-	float c = cov2D[1][1] += 0.3f;
++	float c = cov2D[1][1] += low_pass;
+ 
+ 	float denom = a * c - b * b;
+ 	float dL_da = 0, dL_db = 0, dL_dc = 0;
+@@ -578,7 +578,7 @@ void BACKWARD::preprocess(
+ 	float* dL_dcov3D,
+ 	float* dL_dsh,
+ 	glm::vec3* dL_dscale,
+-	glm::vec4* dL_drot)
++	glm::vec4* dL_drot, float low_pass)
+ {
+ 	// Propagate gradients for the path of 2D conic matrix computation. 
+ 	// Somewhat long, thus it is its own kernel rather than being part of 
+@@ -596,7 +596,7 @@ void BACKWARD::preprocess(
+ 		viewmatrix,
+ 		dL_dconic,
+ 		(float3*)dL_dmean3D,
+-		dL_dcov3D);
++		dL_dcov3D, low_pass);
+ 
+ 	// Propagate gradients for remaining steps: finish 3D mean gradients,
+ 	// propagate color gradients to SH (if desireD), propagate 3D covariance
+diff --git a/cuda_rasterizer/backward.h b/cuda_rasterizer/backward.h
+index 93dd2e4..790912b 100644
+--- a/cuda_rasterizer/backward.h
++++ b/cuda_rasterizer/backward.h
+@@ -59,7 +59,7 @@ namespace BACKWARD
+ 		float* dL_dcov3D,
+ 		float* dL_dsh,
+ 		glm::vec3* dL_dscale,
+-		glm::vec4* dL_drot);
++		glm::vec4* dL_drot, float low_pass);
+ }
+ 
+ #endif
+\ No newline at end of file
+diff --git a/cuda_rasterizer/forward.cu b/cuda_rasterizer/forward.cu
+index c419a32..3e06afd 100644
+--- a/cuda_rasterizer/forward.cu
++++ b/cuda_rasterizer/forward.cu
+@@ -71,7 +71,7 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const
+ }
+ 
+ // Forward version of 2D covariance matrix computation
+-__device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y, float tan_fovx, float tan_fovy, const float* cov3D, const float* viewmatrix)
++__device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y, float tan_fovx, float tan_fovy, const float* cov3D, const float* viewmatrix, float low_pass)
+ {
+ 	// The following models the steps outlined by equations 29
+ 	// and 31 in "EWA Splatting" (Zwicker et al., 2002). 
+@@ -107,8 +107,8 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
+ 
+ 	// Apply low-pass filter: every Gaussian should be at least
+ 	// one pixel wide/high. Discard 3rd row and column.
+-	cov[0][0] += 0.3f;
+-	cov[1][1] += 0.3f;
++	cov[0][0] += low_pass;
++	cov[1][1] += low_pass;
+ 	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) };
+ }
+ 
+@@ -177,7 +177,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
+ 	float4* conic_opacity,
+ 	const dim3 grid,
+ 	uint32_t* tiles_touched,
+-	bool prefiltered)
++	bool prefiltered, float low_pass)
+ {
+ 	auto idx = cg::this_grid().thread_rank();
+ 	if (idx >= P)
+@@ -213,7 +213,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
+ 	}
+ 
+ 	// Compute 2D screen-space covariance matrix
+-	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix);
++	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix, low_pass);
+ 
+ 	// Invert covariance (EWA algorithm)
+ 	float det = (cov.x * cov.z - cov.y * cov.y);
+@@ -423,7 +423,7 @@ void FORWARD::preprocess(int P, int D, int M,
+ 	float4* conic_opacity,
+ 	const dim3 grid,
+ 	uint32_t* tiles_touched,
+-	bool prefiltered)
++	bool prefiltered, float low_pass)
+ {
+ 	preprocessCUDA<NUM_CHANNELS> << <(P + 255) / 256, 256 >> > (
+ 		P, D, M,
+@@ -450,6 +450,6 @@ void FORWARD::preprocess(int P, int D, int M,
+ 		conic_opacity,
+ 		grid,
+ 		tiles_touched,
+-		prefiltered
++		prefiltered, low_pass
+ 		);
+ }
+\ No newline at end of file
+diff --git a/cuda_rasterizer/forward.h b/cuda_rasterizer/forward.h
+index 3c11cb9..b86cb87 100644
+--- a/cuda_rasterizer/forward.h
++++ b/cuda_rasterizer/forward.h
+@@ -45,7 +45,7 @@ namespace FORWARD
+ 		float4* conic_opacity,
+ 		const dim3 grid,
+ 		uint32_t* tiles_touched,
+-		bool prefiltered);
++		bool prefiltered, float low_pass);
+ 
+ 	// Main rasterization method.
+ 	void render(
+diff --git a/cuda_rasterizer/rasterizer.h b/cuda_rasterizer/rasterizer.h
+index 81544ef..f628273 100644
+--- a/cuda_rasterizer/rasterizer.h
++++ b/cuda_rasterizer/rasterizer.h
+@@ -50,7 +50,7 @@ namespace CudaRasterizer
+ 			const bool prefiltered,
+ 			float* out_color,
+ 			int* radii = nullptr,
+-			bool debug = false);
++			bool debug = false, float low_pass = 0.3f);
+ 
+ 		static void backward(
+ 			const int P, int D, int M, int R,
+@@ -81,7 +81,7 @@ namespace CudaRasterizer
+ 			float* dL_dsh,
+ 			float* dL_dscale,
+ 			float* dL_drot,
+-			bool debug);
++			bool debug, float low_pass);
+ 	};
+ };
+ 
+diff --git a/cuda_rasterizer/rasterizer_impl.cu b/cuda_rasterizer/rasterizer_impl.cu
+index f8782ac..5cd38b8 100644
+--- a/cuda_rasterizer/rasterizer_impl.cu
++++ b/cuda_rasterizer/rasterizer_impl.cu
+@@ -217,7 +217,7 @@ int CudaRasterizer::Rasterizer::forward(
+ 	const bool prefiltered,
+ 	float* out_color,
+ 	int* radii,
+-	bool debug)
++	bool debug, float low_pass)
+ {
+ 	const float focal_y = height / (2.0f * tan_fovy);
+ 	const float focal_x = width / (2.0f * tan_fovx);
+@@ -269,7 +269,7 @@ int CudaRasterizer::Rasterizer::forward(
+ 		geomState.conic_opacity,
+ 		tile_grid,
+ 		geomState.tiles_touched,
+-		prefiltered
++		prefiltered, low_pass
+ 	), debug)
+ 
+ 	// Compute prefix sum over full list of touched tile counts by Gaussians
+@@ -366,7 +366,7 @@ void CudaRasterizer::Rasterizer::backward(
+ 	float* dL_dsh,
+ 	float* dL_dscale,
+ 	float* dL_drot,
+-	bool debug)
++	bool debug, float low_pass)
+ {
+ 	GeometryState geomState = GeometryState::fromChunk(geom_buffer, P);
+ 	BinningState binningState = BinningState::fromChunk(binning_buffer, R);
+@@ -430,5 +430,5 @@ void CudaRasterizer::Rasterizer::backward(
+ 		dL_dcov3D,
+ 		dL_dsh,
+ 		(glm::vec3*)dL_dscale,
+-		(glm::vec4*)dL_drot), debug)
++		(glm::vec4*)dL_drot, low_pass), debug)
+ }
+\ No newline at end of file
+diff --git a/diff_gaussian_rasterization/__init__.py b/diff_gaussian_rasterization/__init__.py
+index bbef37d..463f947 100644
+--- a/diff_gaussian_rasterization/__init__.py
++++ b/diff_gaussian_rasterization/__init__.py
+@@ -29,7 +29,7 @@ def rasterize_gaussians(
+     cov3Ds_precomp,
+     raster_settings,
+ ):
+-    return _RasterizeGaussians.apply(
++    result = _RasterizeGaussians.apply(
+         means3D,
+         means2D,
+         sh,
+@@ -41,6 +41,8 @@ def rasterize_gaussians(
+         raster_settings,
+     )
+ 
++    return result if raster_settings.return_n_tiles else result[:2]
++
+ class _RasterizeGaussians(torch.autograd.Function):
+     @staticmethod
+     def forward(
+@@ -76,7 +78,8 @@ class _RasterizeGaussians(torch.autograd.Function):
+             raster_settings.sh_degree,
+             raster_settings.campos,
+             raster_settings.prefiltered,
+-            raster_settings.debug
++            raster_settings.debug,
++            raster_settings.low_pass
+         )
+ 
+         # Invoke C++/CUDA rasterizer
+@@ -95,10 +98,10 @@ class _RasterizeGaussians(torch.autograd.Function):
+         ctx.raster_settings = raster_settings
+         ctx.num_rendered = num_rendered
+         ctx.save_for_backward(colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer)
+-        return color, radii
++        return color, radii, num_rendered
+ 
+     @staticmethod
+-    def backward(ctx, grad_out_color, _):
++    def backward(ctx, grad_out_color, _, _count_grad):
+ 
+         # Restore necessary values from context
+         num_rendered = ctx.num_rendered
+@@ -126,7 +129,8 @@ class _RasterizeGaussians(torch.autograd.Function):
+                 num_rendered,
+                 binningBuffer,
+                 imgBuffer,
+-                raster_settings.debug)
++                raster_settings.debug,
++                raster_settings.low_pass)
+ 
+         # Compute gradients for relevant tensors by invoking backward method
+         if raster_settings.debug:
+@@ -167,6 +171,8 @@ class GaussianRasterizationSettings(NamedTuple):
+     campos : torch.Tensor
+     prefiltered : bool
+     debug : bool
++    low_pass : float = 0.3
++    return_n_tiles : bool = False
+ 
+ class GaussianRasterizer(nn.Module):
+     def __init__(self, raster_settings):
+diff --git a/rasterize_points.cu b/rasterize_points.cu
+index ddc5cf8..ef6a2e3 100644
+--- a/rasterize_points.cu
++++ b/rasterize_points.cu
+@@ -52,7 +52,8 @@ RasterizeGaussiansCUDA(
+ 	const int degree,
+ 	const torch::Tensor& campos,
+ 	const bool prefiltered,
+-	const bool debug)
++	const bool debug,
++	const float low_pass)
+ {
+   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
+     AT_ERROR("means3D must have dimensions (num_points, 3)");
+@@ -109,7 +110,7 @@ RasterizeGaussiansCUDA(
+ 		prefiltered,
+ 		out_color.contiguous().data<float>(),
+ 		radii.contiguous().data<int>(),
+-		debug);
++		debug, low_pass);
+   }
+   return std::make_tuple(rendered, out_color, radii, geomBuffer, binningBuffer, imgBuffer);
+ }
+@@ -136,7 +137,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
+ 	const int R,
+ 	const torch::Tensor& binningBuffer,
+ 	const torch::Tensor& imageBuffer,
+-	const bool debug) 
++	const bool debug,
++	const float low_pass)
+ {
+   const int P = means3D.size(0);
+   const int H = dL_dout_color.size(1);
+@@ -189,7 +191,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
+ 	  dL_dsh.contiguous().data<float>(),
+ 	  dL_dscales.contiguous().data<float>(),
+ 	  dL_drotations.contiguous().data<float>(),
+-	  debug);
++	  debug, low_pass);
+   }
+ 
+   return std::make_tuple(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dsh, dL_dscales, dL_drotations);
+diff --git a/rasterize_points.h b/rasterize_points.h
+index 9023d99..7871bda 100644
+--- a/rasterize_points.h
++++ b/rasterize_points.h
+@@ -35,7 +35,8 @@ RasterizeGaussiansCUDA(
+ 	const int degree,
+ 	const torch::Tensor& campos,
+ 	const bool prefiltered,
+-	const bool debug);
++	const bool debug,
++	const float low_pass);
+ 
+ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+  RasterizeGaussiansBackwardCUDA(
+@@ -59,7 +60,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
+ 	const int R,
+ 	const torch::Tensor& binningBuffer,
+ 	const torch::Tensor& imageBuffer,
+-	const bool debug);
++	const bool debug,
++	const float low_pass);
+ 		
+ torch::Tensor markVisible(
+ 		torch::Tensor& means3D,

@@ -1,0 +1,8 @@
+*.py[cod]
+__pycache__/
+.venv/
+submodules/
+output/
+data/
+*.log
+.pytest_cache/

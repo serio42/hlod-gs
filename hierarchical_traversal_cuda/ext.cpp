@@ -1,0 +1,82 @@
+#include <torch/extension.h>
+#include <vector>
+
+torch::Tensor projected_size_from_shape_cuda(
+    torch::Tensor xyz,
+    torch::Tensor shape_factors,
+    torch::Tensor viewmatrix,
+    int image_width,
+    int image_height,
+    double tan_fovx,
+    double tan_fovy,
+    double low_pass,
+    double cull_near,
+    int metric_id);
+
+torch::Tensor cull_indices_frustum_from_shape_cuda(
+    torch::Tensor xyz,
+    torch::Tensor shape_factors,
+    torch::Tensor active_indices,
+    torch::Tensor viewmatrix,
+    torch::Tensor projmatrix,
+    int image_width,
+    int image_height,
+    double tan_fovx,
+    double tan_fovy,
+    double low_pass,
+    double cull_frustum,
+    double frustum_near);
+
+torch::Tensor active_top_down_from_shape_cuda(
+    torch::Tensor xyz,
+    torch::Tensor shape_factors,
+    torch::Tensor opacity_logits,
+    torch::Tensor parent_idx,
+    torch::Tensor initial_active,
+    std::vector<int64_t> lod_offsets,
+    torch::Tensor viewmatrix,
+    torch::Tensor projmatrix,
+    int image_width,
+    int image_height,
+    double tan_fovx,
+    double tan_fovy,
+    double low_pass,
+    double cull_near,
+    double cull_frustum,
+    double frustum_near,
+    double frustum_far,
+    int cull_backend_id,
+    double px_threshold,
+    int current_lod,
+    int mode_id,
+    int metric_id);
+
+torch::Tensor active_coarse_to_fine_from_shape_cuda(
+    torch::Tensor xyz,
+    torch::Tensor shape_factors,
+    torch::Tensor opacity_logits,
+    torch::Tensor parent_idx,
+    torch::Tensor initial_active,
+    std::vector<int64_t> lod_offsets,
+    torch::Tensor viewmatrix,
+    torch::Tensor projmatrix,
+    int image_width,
+    int image_height,
+    double tan_fovx,
+    double tan_fovy,
+    double low_pass,
+    double cull_near,
+    double cull_frustum,
+    double frustum_near,
+    double frustum_far,
+    int cull_backend_id,
+    double px_threshold,
+    int current_lod,
+    int metric_id);
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("projected_size_from_shape", &projected_size_from_shape_cuda);
+    m.def("active_top_down_from_shape", &active_top_down_from_shape_cuda);
+    m.def("active_coarse_to_fine_from_shape", &active_coarse_to_fine_from_shape_cuda);
+    m.def("cull_indices_frustum_from_shape", &cull_indices_frustum_from_shape_cuda);
+}

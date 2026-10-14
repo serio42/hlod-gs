@@ -1,0 +1,27 @@
+name: hlod
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch=2.5.1
+  - torchvision=0.20.1
+  - pytorch-cuda=12.4
+  # Pin development components: the toolkit metapackage permits newer nvcc.
+  - cuda-version=12.4
+  - cuda-nvcc=12.4
+  - cuda-cudart-dev=12.4
+  - cuda-cccl=12.4
+  - ninja
+  - pip
+  - numpy<2
+  - scipy
+  - plyfile
+  - pillow
+  - tqdm
+  - tensorboard
+  - pip:
+      - opencv-python<4.12
+      - imageio[ffmpeg]
+      - gsplat==1.5.3

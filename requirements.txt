@@ -1,0 +1,10 @@
+numpy==1.26.4
+scipy==1.15.3
+plyfile==1.1.3
+Pillow>=10,<12
+tqdm>=4.66,<5
+opencv-python<4.12
+imageio[ffmpeg]>=2.34,<3
+tensorboard>=2.18,<3
+ninja
+gsplat==1.5.3
