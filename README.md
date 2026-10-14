@@ -1,8 +1,10 @@
 # HLoD: Screen-Space Hierarchical Level-of-Detail Traversal for 3D Gaussian Splatting
 
+![HLoD – Überblick](assets/teaser.png)
+
 Implementation of HLoD by **Jan U. Müller, Jakob Sommer and Reinhard Klein**, published in *Computer Graphics Forum* 45(7), 2026.
 
-[Paper](https://diglib.eg.org/items/429b6aa4-7897-4217-b297-272992d745ae) · [DOI](https://doi.org/10.1111/cgf.70636)
+[Paper](https://diglib.eg.org/items/429b6aa4-7897-4217-b297-272992d745ae)
 
 HLoD trains an explicit Gaussian parent–child forest. At each view, a screen-space traversal selects a hierarchy cut: sufficiently small sibling groups are replaced by their trained parents. Training alternates adaptive traversal with current-level and randomly capped supervision.
 
